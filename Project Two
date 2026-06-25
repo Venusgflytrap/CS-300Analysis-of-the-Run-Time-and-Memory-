@@ -1,0 +1,413 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+// Define a structure to hold course information
+struct Course {
+    std::string courseNumber;
+    std::string courseTitle;
+    std::vector<std::string> prerequisites;
+
+    // Default constructor
+    Course() {}
+
+    // Overloaded constructor for easy instantiation
+    Course(std::string number, std::string title) {
+        courseNumber = number;
+        courseTitle = title;
+    }
+};
+
+// Internal structure for tree node
+struct Node {
+    Course course;
+    Node* left;
+    Node* right;
+
+    // Default constructor
+    Node() {
+        left = nullptr;
+        right = nullptr;
+    }
+
+    // Initialize with a course
+    Node(Course aCourse) : Node() {
+        course = aCourse;
+    }
+};
+
+// Binary Search Tree class implementation to manage course data
+class BinarySearchTree {
+private:
+    Node* root;
+
+    // Helper functions for recursive operations
+    void destroyRecursive(Node* node);
+    void insertHelper(Node* node, Course course);
+    void inOrderHelper(Node* node) const;
+    Node* searchHelper(Node* node, const std::string& courseNumber) const;
+
+public:
+    BinarySearchTree();
+    virtual ~BinarySearchTree();
+    void Insert(Course course);
+    void InOrder() const;
+    Course Search(const std::string& courseNumber) const;
+    bool IsEmpty() const;
+    bool ValidatePrerequisites() const;
+};
+
+/**
+ * Default constructor
+ */
+BinarySearchTree::BinarySearchTree() {
+    root = nullptr;
+}
+
+/**
+ * Destructor
+ */
+BinarySearchTree::~BinarySearchTree() {
+    destroyRecursive(root);
+}
+
+/**
+ * Recursively delete all nodes to prevent memory leaks
+ */
+void BinarySearchTree::destroyRecursive(Node* node) {
+    if (node != nullptr) {
+        destroyRecursive(node->left);
+        destroyRecursive(node->right);
+        delete node;
+    }
+}
+
+/**
+ * Insert a course into the BST
+ */
+void BinarySearchTree::Insert(Course course) {
+    if (root == nullptr) {
+        root = new Node(course);
+    } else {
+        insertHelper(root, course);
+    }
+}
+
+/**
+ * Helper to recursively find insertion point and insert
+ */
+void BinarySearchTree::insertHelper(Node* node, Course course) {
+    // Compare course numbers to sort alphanumerically
+    if (course.courseNumber < node->course.courseNumber) {
+        if (node->left == nullptr) {
+            node->left = new Node(course);
+        } else {
+            insertHelper(node->left, course);
+        }
+    } else {
+        if (node->right == nullptr) {
+            node->right = new Node(course);
+        } else {
+            insertHelper(node->right, course);
+        }
+    }
+}
+
+/**
+ * Check if the tree has no data
+ */
+bool BinarySearchTree::IsEmpty() const {
+    return root == nullptr;
+}
+
+/**
+ * Perform alphanumeric sorted print using In-Order Traversal
+ */
+void BinarySearchTree::InOrder() const {
+    inOrderHelper(root);
+}
+
+/**
+ * Helper for recursive In-Order Traversal
+ */
+void BinarySearchTree::inOrderHelper(Node* node) const {
+    if (node != nullptr) {
+        inOrderHelper(node->left);
+        std::cout << node->course.courseNumber << ", " << node->course.courseTitle << std::endl;
+        inOrderHelper(node->right);
+    }
+}
+
+/**
+ * Search for a course by courseNumber
+ */
+Course BinarySearchTree::Search(const std::string& courseNumber) const {
+    Node* current = searchHelper(root, courseNumber);
+    if (current != nullptr) {
+        return current->course;
+    }
+    return Course(); // Return empty course if not found
+}
+
+/**
+ * Helper for recursive search
+ */
+Node* BinarySearchTree::searchHelper(Node* node, const std::string& courseNumber) const {
+    if (node == nullptr || node->course.courseNumber == courseNumber) {
+        return node;
+    }
+    if (courseNumber < node->course.courseNumber) {
+        return searchHelper(node->left, courseNumber);
+    }
+    return searchHelper(node->right, courseNumber);
+}
+
+/**
+ * Helper to recursively collect all courses into a vector to check prerequisites
+ */
+void collectCourses(Node* node, std::vector<std::string>& list) {
+    if (node != nullptr) {
+        collectCourses(node->left, list);
+        list.push_back(node->course.courseNumber);
+        collectCourses(node->right, list);
+    }
+}
+
+/**
+ * Recursively validate that all prerequisite courses actually exist in the loaded data structure
+ */
+bool validatePrereqsRecursive(Node* current, Node* rootNode) {
+    if (current == nullptr) {
+        return true;
+    }
+
+    // Verify left subtree
+    if (!validatePrereqsRecursive(current->left, rootNode)) {
+        return false;
+    }
+
+    // Verify prerequisites of current node
+    for (const std::string& prereq : current->course.prerequisites) {
+        // Search for the prerequisite in the tree
+        Node* searchNode = rootNode;
+        bool found = false;
+        while (searchNode != nullptr) {
+            if (searchNode->course.courseNumber == prereq) {
+                found = true;
+                break;
+            }
+            if (prereq < searchNode->course.courseNumber) {
+                searchNode = searchNode->left;
+            } else {
+                searchNode = searchNode->right;
+            }
+        }
+        if (!found) {
+            std::cout << "Error: Prerequisite '" << prereq << "' for course '" 
+                      << current->course.courseNumber << "' does not exist in the data file." << std::endl;
+            return false;
+        }
+    }
+
+    // Verify right subtree
+    return validatePrereqsRecursive(current->right, rootNode);
+}
+
+bool BinarySearchTree::ValidatePrerequisites() const {
+    return validatePrereqsRecursive(root, root);
+}
+
+/**
+ * Helper function to trim whitespaces from a string
+ */
+std::string trim(const std::string& str) {
+    size_t first = str.find_first_not_of(" \t\r\n");
+    if (std::string::npos == first) {
+        return "";
+    }
+    size_t last = str.find_last_not_of(" \t\r\n");
+    return str.substr(first, (last - first + 1));
+}
+
+/**
+ * Function to load course data from a CSV file into the Binary Search Tree
+ */
+bool loadCourses(const std::string& csvPath, BinarySearchTree* bst) {
+    std::ifstream file(csvPath);
+    if (!file.is_open()) {
+        std::cout << "Error: Could not open file " << csvPath << ". Please make sure the path is correct." << std::endl;
+        return false;
+    }
+
+    std::string line;
+    int lineNum = 0;
+    bool success = true;
+
+    // Temp storage to validate lines
+    while (std::getline(file, line)) {
+        lineNum++;
+        line = trim(line);
+        if (line.empty()) {
+            continue; // Skip empty lines
+        }
+
+        std::stringstream ss(line);
+        std::string token;
+        std::vector<std::string> tokens;
+
+        // Split line by commas
+        while (std::getline(ss, token, ',')) {
+            tokens.push_back(trim(token));
+        }
+
+        // Validate basic formatting: must have at least course number and course title
+        if (tokens.size() < 2) {
+            std::cout << "Error on line " << lineNum << ": Invalid row format. Each line must have at least a course number and title." << std::endl;
+            success = false;
+            continue;
+        }
+
+        Course course;
+        course.courseNumber = tokens[0];
+        course.courseTitle = tokens[1];
+
+        // Any remaining fields are prerequisites
+        for (size_t i = 2; i < tokens.size(); ++i) {
+            if (!tokens[i].empty()) {
+                course.prerequisites.push_back(tokens[i]);
+            }
+        }
+
+        bst->Insert(course);
+    }
+    file.close();
+
+    // Verify prerequisites refer to real courses
+    if (success && !bst->IsEmpty()) {
+        if (!bst->ValidatePrerequisites()) {
+            std::cout << "Warning: The input file contains missing prerequisites or invalid course references." << std::endl;
+        }
+    }
+
+    return success;
+}
+
+/**
+ * Convert string to uppercase for case-insensitive lookup
+ */
+std::string toUpperCase(std::string str) {
+    std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+    return str;
+}
+
+/**
+ * Main application entry point showing user interface menu
+ */
+int main() {
+    BinarySearchTree* bst = new BinarySearchTree();
+    std::string filename = "";
+    int choice = 0;
+
+    std::cout << "Welcome to the course planner." << std::endl;
+
+    while (choice != 9) {
+        std::cout << std::endl;
+        std::cout << "1. Load Data Structure." << std::endl;
+        std::cout << "2. Print Course List." << std::endl;
+        std::cout << "3. Print Course." << std::endl;
+        std::cout << "9. Exit" << std::endl;
+        std::cout << "What would you like to do? ";
+
+        std::string inputChoice;
+        std::cin >> inputChoice;
+
+        // Try converting input to integer
+        try {
+            choice = std::stoi(inputChoice);
+        } catch (const std::invalid_argument&) {
+            choice = 0; // Handle non-integer inputs gracefully
+        } catch (const std::out_of_range&) {
+            choice = 0;
+        }
+
+        switch (choice) {
+            case 1: {
+                std::cout << "Enter the file name containing the course data: ";
+                std::cin >> filename;
+
+                // Reset or reinitialize BST to prevent duplicate loads
+                delete bst;
+                bst = new BinarySearchTree();
+
+                if (loadCourses(filename, bst)) {
+                    std::cout << "Success: Data successfully loaded into the structure." << std::endl;
+                } else {
+                    std::cout << "Failure: Failed to load data from file." << std::endl;
+                }
+                break;
+            }
+            case 2: {
+                if (bst == nullptr || bst->IsEmpty()) {
+                    std::cout << "Error: No data loaded. Please load course data first (Option 1)." << std::endl;
+                } else {
+                    std::cout << "Here is a sample schedule:" << std::endl;
+                    bst->InOrder();
+                }
+                break;
+            }
+            case 3: {
+                if (bst == nullptr || bst->IsEmpty()) {
+                    std::cout << "Error: No data loaded. Please load course data first (Option 1)." << std::endl;
+                    break;
+                }
+
+                std::cout << "What course do you want to know about? ";
+                std::string targetCourseNum;
+                std::cin >> targetCourseNum;
+
+                // Match uppercase standard
+                targetCourseNum = toUpperCase(targetCourseNum);
+                Course foundCourse = bst->Search(targetCourseNum);
+
+                if (!foundCourse.courseNumber.empty()) {
+                    std::cout << foundCourse.courseNumber << ", " << foundCourse.courseTitle << std::endl;
+                    std::cout << "Prerequisites: ";
+                    if (foundCourse.prerequisites.empty()) {
+                        std::cout << "None";
+                    } else {
+                        for (size_t i = 0; i < foundCourse.prerequisites.size(); ++i) {
+                            std::string prereqNum = foundCourse.prerequisites[i];
+                            Course prereqCourse = bst->Search(prereqNum);
+                            std::cout << prereqNum;
+                            if (!prereqCourse.courseTitle.empty()) {
+                                std::cout << " (" << prereqCourse.courseTitle << ")";
+                            }
+                            if (i < foundCourse.prerequisites.size() - 1) {
+                                std::cout << ", ";
+                            }
+                        }
+                    }
+                    std::cout << std::endl;
+                } else {
+                    std::cout << "Error: Course " << targetCourseNum << " not found." << std::endl;
+                }
+                break;
+            }
+            case 9: {
+                std::cout << "Thank you for using the course planner!" << std::endl;
+                break;
+            }
+            default: {
+                std::cout << inputChoice << " is not a valid option." << std::endl;
+                break;
+            }
+        }
+    }
+
+    // Clean up memory before exiting
+    delete bst;
+    return 0;
+}
